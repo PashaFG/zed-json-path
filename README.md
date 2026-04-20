@@ -1,61 +1,48 @@
 # JSONPath
 
-JSONPath support for [Zed](https://zed.dev/).
+JSONPath helper for [Zed](https://zed.dev/).
 
-This repository is a starter template for a Zed extension. It contains the required extension manifest, a minimal Rust extension entrypoint, CI, and a license file.
+The extension adds a JSON code action that copies the dot-separated key path at the cursor position.
 
-## Local development
+## Usage
 
-Install Rust through `rustup`, then add the WASI target used by Zed extensions:
+Install the LSP binary:
+
+```sh
+cargo install --path /Users/Shared/Projects/zed-json-path --force
+```
+
+Install the extension in Zed:
+
+1. Run `zed: install dev extension`.
+2. Select this repository.
+3. Restart Zed so the installed `json-path-lsp` is available on `$PATH`.
+
+Use the code action:
+
+1. Open a JSON file.
+2. Put the cursor on a key or value.
+3. Run `editor: Toggle Code Actions`.
+4. Select `JSONPath: Copy key path`.
+
+For example, placing the cursor on `available` copies:
+
+```text
+store.book.available
+```
+
+## Development
+
+Install the WASI target used by Zed extensions:
 
 ```sh
 rustup target add wasm32-wasip2
 ```
 
-Check the extension:
+Run checks manually:
 
 ```sh
+cargo fmt --check
 cargo check --target wasm32-wasip2
+cargo check --bin json-path-lsp
 ```
-
-To test the extension in Zed:
-
-1. Open the command palette.
-2. Run `zed: extensions`.
-3. Click `Install Dev Extension`.
-4. Select this repository directory.
-
-For debug output, start Zed from a terminal:
-
-```sh
-zed --foreground
-```
-
-## Publishing
-
-To publish this extension, open a pull request to [`zed-industries/extensions`](https://github.com/zed-industries/extensions).
-
-Add this repository as a submodule:
-
-```sh
-git submodule add https://github.com/PashaFG/zed-json-path.git extensions/json-path
-```
-
-Then add an entry to `extensions.toml`:
-
-```toml
-[json-path]
-submodule = "extensions/json-path"
-version = "0.0.1"
-```
-
-Run `pnpm sort-extensions` in the `zed-industries/extensions` repository before submitting the pull request.
-
-## Next steps
-
-To turn this template into actual JSONPath language support, add:
-
-- a Tree-sitter JSONPath grammar reference in `extension.toml`;
-- `languages/jsonpath/config.toml`;
-- Tree-sitter queries such as `highlights.scm`, `brackets.scm`, and `outline.scm`;
-- optional snippets or a language server if needed.

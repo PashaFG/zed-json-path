@@ -1,4 +1,10 @@
-/target/
-*.wasm
-*.log
 .DS_Store
+
+# Rust build output
+/target/
+
+# Zed builds the extension locally
+/extension.wasm
+
+# Local logs
+*.log

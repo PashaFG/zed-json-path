@@ -5,3 +5,13 @@ schema_version = 1
 authors = ["PashaFG"]
 description = "JSONPath support for Zed."
 repository = "https://github.com/PashaFG/zed-json-path"
+
+[lib]
+kind = "Rust"
+version = "0.7.0"
+
+[language_servers.json-path-lsp]
+languages = ["JSON"]
+
+[language_servers.json-path-lsp.language_ids]
+JSON = "json"

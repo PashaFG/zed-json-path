@@ -7,7 +7,7 @@ repository = "https://github.com/PashaFG/zed-json-path"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 zed_extension_api = "0.7.0"
