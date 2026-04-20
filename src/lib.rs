@@ -17,10 +17,12 @@ impl zed::Extension for JsonPathExtension {
         }
 
         if let Some(command) = worktree.which("json-path-lsp") {
+            let separator = separator_setting(worktree);
+
             return Ok(zed::Command {
                 command,
                 args: Vec::new(),
-                env: Vec::new(),
+                env: vec![("JSON_PATH_SEPARATOR".to_string(), separator)],
             });
         }
 
@@ -30,11 +32,26 @@ impl zed::Extension for JsonPathExtension {
 
 zed::register_extension!(JsonPathExtension);
 
+fn separator_setting(worktree: &zed::Worktree) -> String {
+    zed::settings::LspSettings::for_worktree("json-path-lsp", worktree)
+        .ok()
+        .and_then(|settings| settings.settings)
+        .and_then(|settings| {
+            settings
+                .get("separator")
+                .and_then(|separator| separator.as_str())
+                .map(str::to_string)
+        })
+        .filter(|separator| !separator.is_empty())
+        .unwrap_or_else(|| ".".to_string())
+}
+
 pub fn json_key_path_report(
     file_path: &str,
     source: &str,
     row: usize,
     column: usize,
+    separator: &str,
 ) -> Result<String, String> {
     zed::serde_json::from_str::<zed::serde_json::Value>(source)
         .map_err(|error| format!("failed to parse `{file_path}` as JSON: {error}"))?;
@@ -44,7 +61,7 @@ pub fn json_key_path_report(
         if path.is_empty() {
             "$".to_string()
         } else {
-            path.join(".")
+            path.join(separator)
         }
     })
 }

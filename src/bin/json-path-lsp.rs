@@ -10,7 +10,8 @@ use zed_extension_api::serde_json::{json, Value};
 
 fn main() -> io::Result<()> {
     let stdin = io::stdin();
-    let mut server = JsonPathLsp::default();
+
+    let mut server = JsonPathLsp::new();
     server.run(BufReader::new(stdin.lock()), io::stdout().lock())
 }
 
@@ -18,9 +19,18 @@ fn main() -> io::Result<()> {
 struct JsonPathLsp {
     documents: HashMap<String, String>,
     shutdown_requested: bool,
+    separator: String,
 }
 
 impl JsonPathLsp {
+    fn new() -> Self {
+        Self {
+            documents: HashMap::new(),
+            shutdown_requested: false,
+            separator: std::env::var("JSON_PATH_SEPARATOR").unwrap_or_else(|_| ".".to_string()),
+        }
+    }
+
     fn run<R, W>(&mut self, mut reader: BufReader<R>, mut writer: W) -> io::Result<()>
     where
         R: Read,
@@ -164,9 +174,13 @@ impl JsonPathLsp {
             return json!([]);
         };
 
-        let Ok(key_path) =
-            json_path::json_key_path_report(uri, source, line as usize + 1, character as usize + 1)
-        else {
+        let Ok(key_path) = json_path::json_key_path_report(
+            uri,
+            source,
+            line as usize + 1,
+            character as usize + 1,
+            &self.separator,
+        ) else {
             return json!([]);
         };
 

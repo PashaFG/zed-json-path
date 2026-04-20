@@ -31,6 +31,28 @@ For example, placing the cursor on `available` copies:
 store.book.available
 ```
 
+## Settings
+
+The key path separator is configured in Zed's `settings.json` under the `lsp.json-path-lsp.settings` section.
+
+```json
+{
+  "lsp": {
+    "json-path-lsp": {
+      "settings": {
+        "separator": "."
+      }
+    }
+  }
+}
+```
+
+The default separator is `.`. For example, set it to `/` to copy paths like:
+
+```text
+store/book/available
+```
+
 ## Development
 
 Install the WASI target used by Zed extensions:
