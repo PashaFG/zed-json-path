@@ -1,0 +1,7 @@
+id = "json-path"
+name = "JSONPath"
+version = "0.0.1"
+schema_version = 1
+authors = ["PashaFG"]
+description = "JSONPath support for Zed."
+repository = "https://github.com/PashaFG/zed-json-path"
