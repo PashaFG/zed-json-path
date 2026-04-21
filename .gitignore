@@ -6,6 +6,9 @@
 # Zed builds the extension locally
 /extension.wasm
 
+# Local release artifacts
+/dist/
+
 # Downloaded language server binaries
 /json-path-lsp-*/
 

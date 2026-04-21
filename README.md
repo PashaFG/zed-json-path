@@ -81,6 +81,15 @@ cargo check --target wasm32-wasip2
 cargo check --bin json-path-lsp
 ```
 
+Create a release:
+
+```sh
+git tag v0.0.2
+git push origin v0.0.2
+```
+
+The release workflow builds `json-path-lsp` and uploads the required assets to the GitHub Release.
+
 For local development before a GitHub Release exists, install the LSP binary manually:
 
 ```sh

@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release $TAG_NAME already exists"
+          else
+            gh release create "$TAG_NAME" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --notes "Release $TAG_NAME"
+          fi
+
+  build:
+    name: Build ${{ matrix.asset }}
+    needs: create-release
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            asset: json-path-lsp-macos-aarch64
+            binary: json-path-lsp
+          - runner: macos-15-intel
+            asset: json-path-lsp-macos-x86_64
+            binary: json-path-lsp
+          - runner: ubuntu-24.04-arm
+            asset: json-path-lsp-linux-aarch64
+            binary: json-path-lsp
+          - runner: ubuntu-24.04
+            asset: json-path-lsp-linux-x86_64
+            binary: json-path-lsp
+          - runner: windows-11-arm
+            asset: json-path-lsp-windows-aarch64.exe
+            binary: json-path-lsp.exe
+          - runner: windows-2025
+            asset: json-path-lsp-windows-x86_64.exe
+            binary: json-path-lsp.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build LSP
+        run: cargo build --release --bin json-path-lsp
+
+      - name: Prepare asset
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp "target/release/${{ matrix.binary }}" "dist/${{ matrix.asset }}"
+
+      - name: Upload release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: gh release upload "$TAG_NAME" "dist/${{ matrix.asset }}" --clobber
