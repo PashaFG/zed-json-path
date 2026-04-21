@@ -6,5 +6,8 @@
 # Zed builds the extension locally
 /extension.wasm
 
+# Downloaded language server binaries
+/json-path-lsp-*/
+
 # Local logs
 *.log

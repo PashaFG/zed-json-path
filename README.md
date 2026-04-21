@@ -3,20 +3,14 @@
 JSONPath helper for [Zed](https://zed.dev/).
 
 The extension adds a JSON code action that copies the key path at the cursor position.
+It is a Zed alternative to the VS Code extension [Copy JSON Path](https://marketplace.visualstudio.com/items?itemName=nidu.copy-json-path).
 
 ## Usage
-
-Install the LSP binary:
-
-```sh
-cargo install --path /Users/Shared/Projects/zed-json-path --force
-```
 
 Install the extension in Zed:
 
 1. Run `zed: install dev extension`.
 2. Select this repository.
-3. Restart Zed so the installed `json-path-lsp` is available on `$PATH`.
 
 Use the code action:
 
@@ -85,4 +79,22 @@ Run checks manually:
 cargo fmt --check
 cargo check --target wasm32-wasip2
 cargo check --bin json-path-lsp
+```
+
+For local development before a GitHub Release exists, install the LSP binary manually:
+
+```sh
+cargo install --path . --force
+```
+
+When `json-path-lsp` is not available on `$PATH`, the extension downloads it from the latest GitHub Release.
+Release assets must be uncompressed executable binaries with these names:
+
+```text
+json-path-lsp-macos-aarch64
+json-path-lsp-macos-x86_64
+json-path-lsp-linux-aarch64
+json-path-lsp-linux-x86_64
+json-path-lsp-windows-aarch64.exe
+json-path-lsp-windows-x86_64.exe
 ```

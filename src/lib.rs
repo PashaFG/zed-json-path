@@ -3,12 +3,18 @@ use zed_extension_api as zed;
 const DEFAULT_NON_QUOTED_KEY_REGEX: &str = r"^[a-zA-Z$_][a-zA-Z\d$_]*$";
 const DEFAULT_PATH_SEPARATOR: &str = ".";
 const DEFAULT_PREFIX_SEPARATOR: &str = ":";
+const LANGUAGE_SERVER_ID: &str = "json-path-lsp";
+const RELEASE_REPOSITORY: &str = "PashaFG/zed-json-path";
 
-struct JsonPathExtension;
+struct JsonPathExtension {
+    cached_binary_path: Option<String>,
+}
 
 impl zed::Extension for JsonPathExtension {
     fn new() -> Self {
-        Self
+        Self {
+            cached_binary_path: None,
+        }
     }
 
     fn language_server_command(
@@ -16,23 +22,127 @@ impl zed::Extension for JsonPathExtension {
         language_server_id: &zed::LanguageServerId,
         worktree: &zed::Worktree,
     ) -> zed::Result<zed::Command> {
-        if language_server_id.as_ref() != "json-path-lsp" {
+        if language_server_id.as_ref() != LANGUAGE_SERVER_ID {
             return Err(format!("unknown language server: {language_server_id}"));
         }
 
-        if let Some(command) = worktree.which("json-path-lsp") {
-            return Ok(zed::Command {
-                command,
-                args: Vec::new(),
-                env: CopyJsonPathSettings::for_worktree(worktree).env(),
-            });
+        let settings = CopyJsonPathSettings::for_worktree(worktree);
+
+        if let Some(command) = worktree.which(LANGUAGE_SERVER_ID) {
+            return Ok(language_server_command(command, &settings));
         }
 
-        Err("install `json-path-lsp` with `cargo install --path /Users/Shared/Projects/zed-json-path --force` and restart Zed".to_string())
+        if let Some(command) = &self.cached_binary_path {
+            if std::fs::metadata(command).map_or(false, |metadata| metadata.is_file()) {
+                return Ok(language_server_command(command.clone(), &settings));
+            }
+        }
+
+        let command = download_language_server(language_server_id)?;
+        self.cached_binary_path = Some(command.clone());
+
+        Ok(language_server_command(command, &settings))
     }
 }
 
 zed::register_extension!(JsonPathExtension);
+
+fn language_server_command(command: String, settings: &CopyJsonPathSettings) -> zed::Command {
+    zed::Command {
+        command,
+        args: Vec::new(),
+        env: settings.env(),
+    }
+}
+
+fn download_language_server(language_server_id: &zed::LanguageServerId) -> zed::Result<String> {
+    let result = download_language_server_inner(language_server_id);
+
+    if let Err(error) = &result {
+        zed::set_language_server_installation_status(
+            language_server_id,
+            &zed::LanguageServerInstallationStatus::Failed(error.clone()),
+        );
+    }
+
+    result
+}
+
+fn download_language_server_inner(
+    language_server_id: &zed::LanguageServerId,
+) -> zed::Result<String> {
+    zed::set_language_server_installation_status(
+        language_server_id,
+        &zed::LanguageServerInstallationStatus::CheckingForUpdate,
+    );
+
+    let release = zed::latest_github_release(
+        RELEASE_REPOSITORY,
+        zed::GithubReleaseOptions {
+            require_assets: true,
+            pre_release: false,
+        },
+    )
+    .map_err(|error| format!("failed to fetch latest release: {error}"))?;
+    let asset_name = language_server_asset_name()?;
+    let version_dir = format!("{LANGUAGE_SERVER_ID}-{}", release.version);
+    let binary_path = format!("{version_dir}/{asset_name}");
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == asset_name)
+        .ok_or_else(|| {
+            format!(
+                "release {} does not contain asset `{asset_name}`",
+                release.version
+            )
+        })?;
+
+    if !std::fs::metadata(&binary_path).map_or(false, |metadata| metadata.is_file()) {
+        std::fs::create_dir_all(&version_dir)
+            .map_err(|error| format!("failed to create `{version_dir}`: {error}"))?;
+
+        zed::set_language_server_installation_status(
+            language_server_id,
+            &zed::LanguageServerInstallationStatus::Downloading,
+        );
+        zed::download_file(
+            &asset.download_url,
+            &binary_path,
+            zed::DownloadedFileType::Uncompressed,
+        )
+        .map_err(|error| format!("failed to download `{asset_name}`: {error}"))?;
+
+        if !asset_name.ends_with(".exe") {
+            zed::make_file_executable(&binary_path)
+                .map_err(|error| format!("failed to make `{asset_name}` executable: {error}"))?;
+        }
+    }
+
+    zed::set_language_server_installation_status(
+        language_server_id,
+        &zed::LanguageServerInstallationStatus::None,
+    );
+
+    Ok(binary_path)
+}
+
+fn language_server_asset_name() -> zed::Result<String> {
+    let (os, architecture) = zed::current_platform();
+    let os = match os {
+        zed::Os::Mac => "macos",
+        zed::Os::Linux => "linux",
+        zed::Os::Windows => "windows",
+    };
+    let architecture = match architecture {
+        zed::Architecture::Aarch64 => "aarch64",
+        zed::Architecture::X8664 => "x86_64",
+        zed::Architecture::X86 => return Err("x86 is not supported".to_string()),
+    };
+    let extension = if os == "windows" { ".exe" } else { "" };
+
+    Ok(format!("json-path-lsp-{os}-{architecture}{extension}"))
+}
 
 pub struct CopyJsonPathSettings {
     pub non_quoted_key_regex: String,
