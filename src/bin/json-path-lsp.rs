@@ -15,11 +15,10 @@ fn main() -> io::Result<()> {
     server.run(BufReader::new(stdin.lock()), io::stdout().lock())
 }
 
-#[derive(Default)]
 struct JsonPathLsp {
     documents: HashMap<String, String>,
     shutdown_requested: bool,
-    separator: String,
+    settings: json_path::CopyJsonPathSettings,
 }
 
 impl JsonPathLsp {
@@ -27,7 +26,7 @@ impl JsonPathLsp {
         Self {
             documents: HashMap::new(),
             shutdown_requested: false,
-            separator: std::env::var("JSON_PATH_SEPARATOR").unwrap_or_else(|_| ".".to_string()),
+            settings: json_path::CopyJsonPathSettings::from_env(),
         }
     }
 
@@ -179,7 +178,7 @@ impl JsonPathLsp {
             source,
             line as usize + 1,
             character as usize + 1,
-            &self.separator,
+            &self.settings,
         ) else {
             return json!([]);
         };

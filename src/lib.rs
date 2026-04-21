@@ -1,5 +1,9 @@
 use zed_extension_api as zed;
 
+const DEFAULT_NON_QUOTED_KEY_REGEX: &str = r"^[a-zA-Z$_][a-zA-Z\d$_]*$";
+const DEFAULT_PATH_SEPARATOR: &str = ".";
+const DEFAULT_PREFIX_SEPARATOR: &str = ":";
+
 struct JsonPathExtension;
 
 impl zed::Extension for JsonPathExtension {
@@ -17,12 +21,10 @@ impl zed::Extension for JsonPathExtension {
         }
 
         if let Some(command) = worktree.which("json-path-lsp") {
-            let separator = separator_setting(worktree);
-
             return Ok(zed::Command {
                 command,
                 args: Vec::new(),
-                env: vec![("JSON_PATH_SEPARATOR".to_string(), separator)],
+                env: CopyJsonPathSettings::for_worktree(worktree).env(),
             });
         }
 
@@ -32,18 +34,74 @@ impl zed::Extension for JsonPathExtension {
 
 zed::register_extension!(JsonPathExtension);
 
-fn separator_setting(worktree: &zed::Worktree) -> String {
-    zed::settings::LspSettings::for_worktree("json-path-lsp", worktree)
-        .ok()
-        .and_then(|settings| settings.settings)
-        .and_then(|settings| {
-            settings
-                .get("separator")
-                .and_then(|separator| separator.as_str())
-                .map(str::to_string)
-        })
-        .filter(|separator| !separator.is_empty())
-        .unwrap_or_else(|| ".".to_string())
+pub struct CopyJsonPathSettings {
+    pub non_quoted_key_regex: String,
+    pub put_file_name_in_path: bool,
+    pub prefix_separator: String,
+    pub path_separator: String,
+}
+
+impl CopyJsonPathSettings {
+    pub fn from_env() -> Self {
+        Self {
+            non_quoted_key_regex: env_string(
+                "JSON_PATH_NON_QUOTED_KEY_REGEX",
+                DEFAULT_NON_QUOTED_KEY_REGEX,
+            ),
+            put_file_name_in_path: std::env::var("JSON_PATH_PUT_FILE_NAME_IN_PATH")
+                .ok()
+                .as_deref()
+                == Some("true"),
+            prefix_separator: env_string("JSON_PATH_PREFIX_SEPARATOR", DEFAULT_PREFIX_SEPARATOR),
+            path_separator: env_string("JSON_PATH_PATH_SEPARATOR", DEFAULT_PATH_SEPARATOR),
+        }
+    }
+
+    fn for_worktree(worktree: &zed::Worktree) -> Self {
+        let settings = zed::settings::LspSettings::for_worktree("json-path-lsp", worktree)
+            .ok()
+            .and_then(|settings| settings.settings);
+
+        Self {
+            non_quoted_key_regex: string_setting(
+                settings.as_ref(),
+                "nonQuotedKeyRegex",
+                DEFAULT_NON_QUOTED_KEY_REGEX,
+            ),
+            put_file_name_in_path: bool_setting(settings.as_ref(), "putFileNameInPath", false),
+            prefix_separator: string_setting(
+                settings.as_ref(),
+                "prefixSeparator",
+                DEFAULT_PREFIX_SEPARATOR,
+            ),
+            path_separator: string_setting(
+                settings.as_ref(),
+                "pathSeparator",
+                DEFAULT_PATH_SEPARATOR,
+            ),
+        }
+    }
+
+    fn env(&self) -> Vec<(String, String)> {
+        vec![
+            (
+                "JSON_PATH_NON_QUOTED_KEY_REGEX".to_string(),
+                self.non_quoted_key_regex.clone(),
+            ),
+            (
+                "JSON_PATH_PUT_FILE_NAME_IN_PATH".to_string(),
+                self.put_file_name_in_path.to_string(),
+            ),
+            (
+                "JSON_PATH_PREFIX_SEPARATOR".to_string(),
+                self.prefix_separator.clone(),
+            ),
+            (
+                "JSON_PATH_PATH_SEPARATOR".to_string(),
+                self.path_separator.clone(),
+            ),
+        ]
+    }
 }
 
 pub fn json_key_path_report(
@@ -51,19 +109,120 @@ pub fn json_key_path_report(
     source: &str,
     row: usize,
     column: usize,
-    separator: &str,
+    settings: &CopyJsonPathSettings,
 ) -> Result<String, String> {
     zed::serde_json::from_str::<zed::serde_json::Value>(source)
         .map_err(|error| format!("failed to parse `{file_path}` as JSON: {error}"))?;
 
     let offset = byte_offset_for_position(source, row, column)?;
-    json_key_path_at_offset(source, offset).map(|path| {
-        if path.is_empty() {
-            "$".to_string()
+    let path = json_key_path_at_offset(source, offset)?;
+    format_json_path(file_path, &path, settings)
+}
+
+fn env_string(name: &str, default: &str) -> String {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| default.to_string())
+}
+
+fn string_setting(settings: Option<&zed::serde_json::Value>, key: &str, default: &str) -> String {
+    settings
+        .and_then(|settings| settings.get(key))
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(default)
+        .to_string()
+}
+
+fn bool_setting(settings: Option<&zed::serde_json::Value>, key: &str, default: bool) -> bool {
+    settings
+        .and_then(|settings| settings.get(key))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(default)
+}
+
+fn format_json_path(
+    file_path: &str,
+    path: &[PathSegment],
+    settings: &CopyJsonPathSettings,
+) -> Result<String, String> {
+    let regex = regex::Regex::new(&settings.non_quoted_key_regex)
+        .map_err(|error| format!("invalid nonQuotedKeyRegex: {error}"))?;
+    let mut path = format_path_segments(path, &settings.path_separator, &regex);
+
+    if settings.put_file_name_in_path {
+        let file_name = file_name(file_path).unwrap_or(file_path);
+
+        if path.is_empty() || path == "$" {
+            path = file_name.to_string();
         } else {
-            path.join(separator)
+            path = format!("{file_name}{}{path}", settings.prefix_separator);
         }
-    })
+    }
+
+    Ok(path)
+}
+
+fn format_path_segments(
+    path: &[PathSegment],
+    path_separator: &str,
+    non_quoted_key_regex: &regex::Regex,
+) -> String {
+    let mut output = String::new();
+
+    for segment in path {
+        match segment {
+            PathSegment::Key(key) => {
+                if output.is_empty() {
+                    output.push_str(&format_key_segment(key, non_quoted_key_regex));
+                } else if non_quoted_key_regex.is_match(key) {
+                    output.push_str(path_separator);
+                    output.push_str(key);
+                } else {
+                    output.push_str(&format_quoted_key(key));
+                }
+            }
+            PathSegment::Index(index) => {
+                output.push_str(&format!("[{index}]"));
+            }
+        }
+    }
+
+    if output.is_empty() {
+        "$".to_string()
+    } else {
+        output
+    }
+}
+
+fn format_key_segment(key: &str, non_quoted_key_regex: &regex::Regex) -> String {
+    if non_quoted_key_regex.is_match(key) {
+        key.to_string()
+    } else {
+        format_quoted_key(key)
+    }
+}
+
+fn format_quoted_key(key: &str) -> String {
+    format!(
+        "[{}]",
+        zed::serde_json::to_string(key).expect("serializing a key cannot fail")
+    )
+}
+
+fn file_name(file_path: &str) -> Option<&str> {
+    let path = file_path.trim_end_matches('/');
+
+    path.rsplit(['/', '\\'])
+        .next()
+        .filter(|name| !name.is_empty())
+}
+
+#[derive(Clone)]
+enum PathSegment {
+    Key(String),
+    Index(usize),
 }
 
 fn byte_offset_for_position(source: &str, row: usize, column: usize) -> Result<usize, String> {
@@ -100,7 +259,7 @@ fn byte_offset_for_position(source: &str, row: usize, column: usize) -> Result<u
     ))
 }
 
-fn json_key_path_at_offset(source: &str, offset: usize) -> Result<Vec<String>, String> {
+fn json_key_path_at_offset(source: &str, offset: usize) -> Result<Vec<PathSegment>, String> {
     let mut parser = CursorPathParser {
         source,
         bytes: source.as_bytes(),
@@ -119,11 +278,11 @@ struct CursorPathParser<'a> {
     bytes: &'a [u8],
     offset: usize,
     position: usize,
-    best_path: Vec<String>,
+    best_path: Vec<PathSegment>,
 }
 
 impl CursorPathParser<'_> {
-    fn parse_value(&mut self, path: &mut Vec<String>) -> Result<(usize, usize), String> {
+    fn parse_value(&mut self, path: &mut Vec<PathSegment>) -> Result<(usize, usize), String> {
         self.skip_whitespace();
         let start = self.position;
 
@@ -146,7 +305,7 @@ impl CursorPathParser<'_> {
         Ok((start, end))
     }
 
-    fn parse_object(&mut self, path: &mut Vec<String>) -> Result<usize, String> {
+    fn parse_object(&mut self, path: &mut Vec<PathSegment>) -> Result<usize, String> {
         self.expect_byte(b'{')?;
 
         loop {
@@ -157,7 +316,7 @@ impl CursorPathParser<'_> {
             }
 
             let (key, key_end) = self.parse_string()?;
-            path.push(key);
+            path.push(PathSegment::Key(key));
             self.consider(key_end.0, key_end.1, path);
 
             self.skip_whitespace();
@@ -176,8 +335,9 @@ impl CursorPathParser<'_> {
         }
     }
 
-    fn parse_array(&mut self, path: &mut Vec<String>) -> Result<usize, String> {
+    fn parse_array(&mut self, path: &mut Vec<PathSegment>) -> Result<usize, String> {
         self.expect_byte(b'[')?;
+        let mut index = 0;
 
         loop {
             self.skip_whitespace();
@@ -186,10 +346,13 @@ impl CursorPathParser<'_> {
                 return Ok(self.position);
             }
 
+            path.push(PathSegment::Index(index));
             self.parse_value(path)?;
+            path.pop();
             self.skip_whitespace();
 
             if self.consume_byte(b',') {
+                index += 1;
                 continue;
             }
 
@@ -271,7 +434,7 @@ impl CursorPathParser<'_> {
         }
     }
 
-    fn consider(&mut self, start: usize, end: usize, path: &[String]) {
+    fn consider(&mut self, start: usize, end: usize, path: &[PathSegment]) {
         if start <= self.offset && self.offset <= end && path.len() >= self.best_path.len() {
             self.best_path = path.to_vec();
         }

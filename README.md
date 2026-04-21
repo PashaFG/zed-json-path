@@ -2,7 +2,7 @@
 
 JSONPath helper for [Zed](https://zed.dev/).
 
-The extension adds a JSON code action that copies the dot-separated key path at the cursor position.
+The extension adds a JSON code action that copies the key path at the cursor position.
 
 ## Usage
 
@@ -25,29 +25,47 @@ Use the code action:
 3. Run `editor: Toggle Code Actions`.
 4. Select `JSONPath: Copy key path`.
 
-For example, placing the cursor on `available` copies:
+For example, placing the cursor on `k` in this JSON:
+
+```json
+{
+  "a": ["q", { "k": 1 }, 1]
+}
+```
+
+copies:
 
 ```text
-store.book.available
+a[1].k
 ```
 
 ## Settings
 
-The key path separator is configured in Zed's `settings.json` under the `lsp.json-path-lsp.settings` section.
+The copied path is configured in Zed's `settings.json` under the `lsp.json-path-lsp.settings` section.
 
 ```json
 {
   "lsp": {
     "json-path-lsp": {
       "settings": {
-        "separator": "."
+        "nonQuotedKeyRegex": "^[a-zA-Z$_][a-zA-Z\\d$_]*$",
+        "putFileNameInPath": false,
+        "prefixSeparator": ":",
+        "pathSeparator": "."
       }
     }
   }
 }
 ```
 
-The default separator is `.`. For example, set it to `/` to copy paths like:
+Available settings:
+
+- `nonQuotedKeyRegex`: regex that tests whether a key can be copied without quotes. Default is `^[a-zA-Z$_][a-zA-Z\\d$_]*$`.
+- `putFileNameInPath`: include the file name before the copied path. Default is `false`.
+- `prefixSeparator`: separator between the file name and the path when `putFileNameInPath` is `true`. Default is `:`.
+- `pathSeparator`: separator between path parts. Default is `.`.
+
+For example, set `pathSeparator` to `/` to copy paths like:
 
 ```text
 store/book/available
